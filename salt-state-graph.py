@@ -9,7 +9,7 @@ show_low_sls) for a single minion and produces a program written in DOT.
 The tool is useful for visualising the dependency graph of a Salt states.
 
 """
-from pydot import Dot, Node, Edge
+from pydot import Dot, Node, Edge, Cluster, Subgraph
 import yaml
 import sys
 
@@ -19,36 +19,24 @@ def usage():
     sys.exit(1)
 
 
-_rules = {}
-
-def get_rules():
-    global _rules
-    if not _rules:
-        rules = {
-            'require': {'color': 'blue'},
-            'require_in': {'color': 'blue', 'reverse': True},
-            'watch': {'color': 'red'},
-            'watch_in': {'color': 'red', 'reverse': True},
-        }
-        for edge_type, ruleset in rules.items():
-            if ruleset.get('reverse'):
-                fct = lambda src, dst: Edge(src, dst, color=ruleset['color'])
-            else:
-                fct = lambda dst, src: Edge(src, dst, color=ruleset['color'])
-            ruleset['mkedge'] = fct
-        _rules = rules
-    return _rules
-
-
 def generate_nodes(graph, state_obj):
+    clusters = {}
     nodes = {}
     for state in state_obj:
         node_name = '{0}.{1}'.format(state.get('state'), state.get('__id__'))
         if node_name in nodes:
-            sys.stderr.write('ERROR: {0}: node declared multiple time\n'.format(node_name))
+            nodes[node_name].set_label('{0}\n{1}'.format(nodes[node_name].get_label(), state.get('name')))
+            #sys.stderr.write('ERROR: {0}: node declared multiple time\n'.format(node_name))
             continue
         nodes[node_name] = Node(node_name)
-        graph.add_node(nodes[node_name])
+        nodes[node_name].set_label('{0}.{1}'.format(state.get('state'), state.get('__id__')))
+        nodes[node_name].set_label('{0}\n{1}'.format(nodes[node_name].get_label(), state.get('name')))
+        cluster_name = state['__sls__'].replace('.', '__')
+        if cluster_name not in clusters:
+            clusters[cluster_name] = Cluster(cluster_name)
+            clusters[cluster_name].set_label(state['__sls__'])
+            graph.add_subgraph(clusters[cluster_name])
+        clusters[cluster_name].add_node(nodes[node_name])
     return nodes
 
 
@@ -68,12 +56,24 @@ def targets_name(targets, nodes):
 
 
 def generate_links(graph, state_obj, nodes):
-    rules = get_rules()
+    rules = {
+        'require': {'color': 'blue'},
+        'require_in': {'color': 'blue', 'reverse': True},
+        'watch': {'color': 'red'},
+        'watch_in': {'color': 'red', 'reverse': True},
+    }
+    seen = set()
     for state in state_obj:
         node_name = '{0}.{1}'.format(state.get('state'), state.get('__id__'))
+        if node_name in seen:
+            continue
+        seen.add(node_name)
         for edge_type, ruleset in rules.items():
             for target in targets_name(state.get(edge_type), nodes):
-                graph.add_edge(ruleset['mkedge'](node_name, target))
+                src, dst = node_name, target
+                if ruleset.get('reverse'):
+                    src, dst = dst, src
+                graph.add_edge(Edge(dst, src, color=ruleset['color']))
 
 
 def main(infilename, outfilename):
