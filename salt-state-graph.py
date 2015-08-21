@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
 Usage:
-    salt-state-graph2 <inputfile> <outputfile>
+    salt-state-graph <inputfile> <outputfile>
 
 A tool that ingests the YAML representing the Salt (show)lowstate (or
 show_low_sls) for a single minion and produces a program written in DOT.
@@ -18,8 +18,14 @@ def usage():
     sys.stderr.write(__doc__)
     sys.exit(1)
 
+_nocluster = {
+    'generic.common.tags',
+    'generic.common.fixes.tags',
+}
+
 
 def generate_nodes(graph, state_obj):
+    global _nocluster
     clusters = {}
     nodes = {}
     for state in state_obj:
@@ -31,11 +37,26 @@ def generate_nodes(graph, state_obj):
         nodes[node_name] = Node(node_name)
         nodes[node_name].set_label('{0}.{1}'.format(state.get('state'), state.get('__id__')))
         nodes[node_name].set_label('{0}\n{1}'.format(nodes[node_name].get_label(), state.get('name')))
-        cluster_name = state['__sls__'].replace('.', '__')
+        cluster_name = state['__sls__'].replace('.', '__').replace('-', '_dash_')
+        if state['__sls__'] in _nocluster:
+            tagname = state['__sls__']
+            if tagname.endswith('.tags'):
+                tagname = tagname[:-5]
+#            nodes[node_name].set_label('TAG: {0}\n{1}'.format(
+#                tagname,
+#                nodes[node_name].get_label()
+#                ))
+            nodes[node_name].set_shape('diamond')
+            nodes[node_name].set_color('#55bb55')
+            nodes[node_name].set_style('filled')
+            # nodes[node_name].set_image('taupe.jpg')
         if cluster_name not in clusters:
-            clusters[cluster_name] = Cluster(cluster_name)
-            clusters[cluster_name].set_label(state['__sls__'])
-            graph.add_subgraph(clusters[cluster_name])
+            if state['__sls__'] in _nocluster:
+                clusters[cluster_name] = graph
+            else:
+                clusters[cluster_name] = Cluster(cluster_name)
+                clusters[cluster_name].set_label(state['__sls__'])
+                graph.add_subgraph(clusters[cluster_name])
         clusters[cluster_name].add_node(nodes[node_name])
     return nodes
 
@@ -57,10 +78,10 @@ def targets_name(targets, nodes):
 
 def generate_links(graph, state_obj, nodes):
     rules = {
-        'require': {'color': 'blue'},
-        'require_in': {'color': 'blue', 'reverse': True},
-        'watch': {'color': 'red'},
-        'watch_in': {'color': 'red', 'reverse': True},
+        'require': {'color': '#0000ff'},
+        'require_in': {'color': '#9090ff', 'reverse': True, 'style': 'dashed', },
+        'watch': {'color': '#ff0000'},
+        'watch_in': {'color': '#ff9090', 'reverse': True, 'style': 'dashed', },
     }
     seen = set()
     for state in state_obj:
@@ -73,7 +94,10 @@ def generate_links(graph, state_obj, nodes):
                 src, dst = node_name, target
                 if ruleset.get('reverse'):
                     src, dst = dst, src
-                graph.add_edge(Edge(dst, src, color=ruleset['color']))
+                edge = Edge(dst, src, color=ruleset['color'])
+                if 'style' in ruleset:
+                    edge.set_style(ruleset.get('style'))
+                graph.add_edge(edge)
 
 
 def main(infilename, outfilename):
