@@ -5,7 +5,7 @@ This scripts help visualise state dependencies within salt states.
 Use a `show_lowstate`, or `show_low_sls` to get an idea what salt would do, and
 visualise dependencies about all those states.
 
-```
+```bash
 # Generate a .low file
 # Either for a full lowstate
 salt --out=yaml --out-file=<minion>.low <minion> state.show_lowstate
@@ -43,7 +43,7 @@ Style
 
 Main script to convert your .low file into an image.
 
-```
+```text
 Usage:
   low2svg.sh show_sls.low...
 
