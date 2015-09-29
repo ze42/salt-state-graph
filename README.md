@@ -56,3 +56,6 @@ The input file can be generated with either the global command
 `state.show_lowstate` or for a specific sls with `state.show_low_sls`.
 Input file must be `yaml`, it can be generated with
 `--out=yaml --out-file=<filename>.low`.
+
+
+Note: based on original work from git@github.com:ceralena/salt-state-graph.git
