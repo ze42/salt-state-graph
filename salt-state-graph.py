@@ -12,7 +12,7 @@ The tool is useful for visualising the dependency graph of a Salt states.
 from pydot import Dot, Node, Edge, Cluster, Subgraph
 import yaml
 import sys
-
+import collections
 
 def usage():
     sys.stderr.write(__doc__)
@@ -28,8 +28,13 @@ def generate_nodes(graph, state_obj):
     global _nocluster
     clusters = {}
     nodes = {}
+    namemap = collections.defaultdict(set)
     for state in state_obj:
         node_name = '{0}.{1}'.format(state.get('state'), state.get('__id__'))
+        if 'name' in state:
+            # map_name, to 
+            map_name = '{0}.{1}'.format(state.get('state'), state['name'])
+            namemap[map_name].add(node_name)
         if node_name in nodes:
             nodes[node_name].set_label('{0}\n{1}'.format(nodes[node_name].get_label(), state.get('name')))
             #sys.stderr.write('ERROR: {0}: node declared multiple time\n'.format(node_name))
@@ -58,10 +63,17 @@ def generate_nodes(graph, state_obj):
                 clusters[cluster_name].set_label(state['__sls__'])
                 graph.add_subgraph(clusters[cluster_name])
         clusters[cluster_name].add_node(nodes[node_name])
-    return nodes
+    retnamemap = {}
+    for name in namemap:
+        if 1 != len(namemap[name]):
+            #sys.stderr.write('WARNING: {}: multiple mapping, so map ignored:\n - {}\n'.format(name, '\n - '.join(namemap[name])))
+            pass
+        else:
+            retnamemap[name] = next(iter(namemap[name]))
+    return nodes, retnamemap
 
 
-def targets_name(targets, nodes):
+def targets_name(targets, nodes, nodemap):
     if targets is None:
         return
     assert(isinstance(targets, list))
@@ -70,13 +82,16 @@ def targets_name(targets, nodes):
         assert(len(target) == 1)
         state, name = target.items()[0]
         targetname = '{0}.{1}'.format(state, name)
-        if targetname not in nodes:
-            sys.stderr.write('ERROR: {0}: node not found\n'.format(targetname))
+        if targetname in nodes:
+            yield targetname
             continue
-        yield targetname
+        if targetname in nodemap:
+            yield nodemap[targetname]
+            continue
+        sys.stderr.write('ERROR: {0}: node not found\n'.format(targetname))
 
 
-def generate_links(graph, state_obj, nodes):
+def generate_links(graph, state_obj, nodes, nodemap):
     rules = {
         'require': {'color': '#0000ff'},
         'require_in': {'color': '#9090ff', 'reverse': True, 'style': 'dashed', },
@@ -90,7 +105,7 @@ def generate_links(graph, state_obj, nodes):
             continue
         seen.add(node_name)
         for edge_type, ruleset in rules.items():
-            for target in targets_name(state.get(edge_type), nodes):
+            for target in targets_name(state.get(edge_type), nodes, nodemap):
                 src, dst = node_name, target
                 if ruleset.get('reverse'):
                     src, dst = dst, src
@@ -109,9 +124,9 @@ def main(infilename, outfilename):
     graph = Dot("states", graph_type='digraph')
 
     # First, create all graph nodes
-    nodes = generate_nodes(graph, state_obj)
+    nodes, nodemap = generate_nodes(graph, state_obj)
     # Then, generate our links
-    generate_links(graph, state_obj, nodes)
+    generate_links(graph, state_obj, nodes, nodemap)
     graph.write(outfilename)
 
 if __name__ == '__main__':
